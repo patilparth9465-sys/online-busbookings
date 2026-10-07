@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<title>Owner: manage bookings</title>
+<style>
+:root{--bg:#eef2f5;--card:#fff;--ink:#16222b;--mute:#5d6b76;--line:#d5dde3;--brand:#0d5c91;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#10181e;--card:#18232b;--ink:#e8eef2;--mute:#9aa9b4;--line:#2c3b46;--brand:#5db3ee}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.w{max-width:520px;margin:0 auto;padding:16px}.c{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+h1{font-size:20px;margin:0 0 4px}h2{font-size:17px;margin:0 0 6px}p{color:var(--mute);font-size:14px;margin:0 0 8px}
+label{display:block;font-weight:600;font-size:14px;margin:12px 0 4px}
+input{width:100%;padding:10px;border-radius:9px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font:16px system-ui,sans-serif}
+button,a.b{margin-top:16px;display:block;text-align:center;text-decoration:none;width:100%;border:0;border-radius:10px;background:var(--brand);color:#fff;font:600 16px system-ui,sans-serif;padding:13px;cursor:pointer}
+button[disabled]{opacity:.5}a.b{background:#1f9d55}.hide{display:none}
+button.red{background:#b3261e}button.sm{width:auto;margin:0;padding:7px 12px;font-size:14px}
+.e{color:#b3261e;font-size:14px;min-height:20px;margin-top:8px}.ok{color:#17803d;font-weight:600}
+.item{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
+.item span small{display:block;color:var(--mute)}
+</style></head><body><div class="w">
+
+<div class="c">
+<h1>Owner panel</h1>
+<label for="k">Owner passcode</label><input id="k" type="password" autocomplete="current-password" maxlength="60">
+</div>
+
+<div class="c">
+<h2>Confirm a booking</h2>
+<p>Check the payment in your Paytm app first. Tapping the first button <b>locks the seats for everyone on the website</b>. Then a green button opens WhatsApp with the confirmation.</p>
+<label for="n">Customer name</label><input id="n" maxlength="40">
+<label for="m">Customer mobile (10 digits)</label><input id="m" inputmode="numeric" maxlength="10">
+<label for="r">Booking ref</label><input id="r" maxlength="12">
+<label for="s">Seats</label><input id="s" placeholder="e.g. 3A, 3B" maxlength="40">
+<label for="a">Amount received (&#8377;)</label><input id="a" inputmode="numeric" maxlength="7">
+<label for="b">Boarding point</label><input id="b" maxlength="60">
+<div class="e" id="e"></div>
+<button id="go">Confirm and lock seats</button>
+<a class="b hide" id="wa" target="_blank" rel="noopener">Send confirmation on WhatsApp</a>
+</div>
+
+<div class="c">
+<h2>Cancel a booking</h2>
+<p>Seats become available again on the website within about 15 seconds. Enter the booking ref, or the seat numbers, or tap Cancel in the list below.</p>
+<label for="cr">Booking ref</label><input id="cr" maxlength="12" placeholder="e.g. BK12AB34">
+<label for="cs">or Seats</label><input id="cs" placeholder="e.g. 3A, 3B" maxlength="40">
+<div class="e" id="ce"></div>
+<button class="red" id="cancel">Cancel and re-open seats</button>
+</div>
+
+<div class="c">
+<h2>Currently booked seats</h2>
+<div id="list"><p>Enter your passcode and tap Refresh.</p></div>
+<button id="refresh">Refresh list</button>
+</div>
+
+</div>
+<script>
+/* ===== CONFIG: same values as in index.html ===== */
+var C={busName:"Your Travels",from:"Pune (Akurdi)",to:"Shahada",date:"Date to be announced",time:"Departure time",
+  seatApi:"https://script.google.com/macros/s/AKfycbzWMia3i-R38exLpXioPk2GQzG4NrCDjMDP43Yk0YTTcsRc6M1yxt5wNOoAbG4z3Gjy/exec"};
+/* ===== end CONFIG ===== */
+var $=function(i){return document.getElementById(i)};
+var SEAT_RE=/^(S1|([1-9]|1[01])[A-D])$/;
+function api(payload){
+  return fetch(C.seatApi,{method:"POST",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(payload)})
+    .then(function(r){return r.text()})
+    .then(function(t){try{return JSON.parse(t)}catch(x){throw new Error("bad-response")}})}
+function netErr(x){return x&&x.message==="bad-response"
+  ?"Server replied with a non-JSON page. Redeploy the Apps Script as a Web app with access set to Anyone, then use the new /exec link."
+  :"Could not reach the seat server. Check the seatApi link, that the web app access is Anyone, and your internet."}
+function parseSeats(s){return s.toUpperCase().split(/[\s,]+/).filter(Boolean).filter(function(v,i,x){return x.indexOf(v)===i})}
+$("a").oninput=function(){this.value=this.value.replace(/\D/g,"")};
+$("m").oninput=function(){this.value=this.value.replace(/\D/g,"")};
+
+$("go").onclick=async function(){
+  var n=$("n").value.trim(),m=$("m").value.trim(),r=$("r").value.trim(),s=$("s").value.trim(),a=$("a").value.trim(),b=$("b").value.trim(),key=$("k").value,e=$("e");
+  e.className="e";e.textContent="";$("wa").classList.add("hide");
+  if(!n||!/^[6-9]\d{9}$/.test(m)||!r||!s||!a){e.textContent="Fill name, a valid 10-digit mobile, ref, seats and amount.";return}
+  if(!key){e.textContent="Enter your owner passcode.";return}
+  var list=parseSeats(s);
+  if(!list.length||list.some(function(v){return !SEAT_RE.test(v)})){e.textContent="Seats must look like S1, 1A, 3B (A to D, rows 1 to 11).";return}
+  var btn=this;btn.disabled=true;btn.textContent="Locking seats...";
+  try{
+    var res=await api({key:key,action:"lock",seats:list,ref:r});
+    if(!res.ok){e.textContent=res.error||"Could not lock seats.";btn.disabled=false;btn.textContent="Confirm and lock seats";return}
+  }catch(x){e.textContent=netErr(x);btn.disabled=false;btn.textContent="Confirm and lock seats";return}
+  var msg="Hi "+n+",\n\nYour bus booking is CONFIRMED.\n\nBooking ref: "+r+"\nRoute: "+C.from+" to "+C.to+"\nDate: "+C.date+"\nDeparture: "+C.time+(b?"\nBoarding point: "+b:"")+"\nSeats: "+list.join(", ")+"\nAmount received: ₹"+a+"\n\nPlease reach the boarding point 15 minutes before departure.\n\nThank you,\n"+C.busName;
+  $("wa").href="https://wa.me/91"+m+"?text="+encodeURIComponent(msg);$("wa").classList.remove("hide");
+  e.className="e ok";e.textContent="Seats "+list.join(", ")+" are now LOCKED on the website. Tap the green button to send the confirmation.";
+  btn.disabled=false;btn.textContent="Confirm and lock seats";loadList()};
+
+async function doCancel(payload,btn,label){
+  var e=$("ce");e.className="e";e.textContent="";
+  if(!$("k").value){e.textContent="Enter your owner passcode at the top.";return}
+  if(btn){btn.disabled=true}
+  try{
+    payload.key=$("k").value;payload.action="cancel";
+    var res=await api(payload);
+    if(!res.ok){e.textContent=res.error||"Could not cancel.";}
+    else{e.className="e ok";e.textContent="Cancelled. Seats "+res.freed.join(", ")+" are open for booking again."}
+  }catch(x){e.textContent=netErr(x)}
+  if(btn){btn.disabled=false;if(label)btn.textContent=label}
+  loadList()}
+
+$("cancel").onclick=function(){
+  var r=$("cr").value.trim(),s=parseSeats($("cs").value.trim()),e=$("ce");
+  if(!r&&!s.length){e.className="e";e.textContent="Enter a booking ref or seat numbers.";return}
+  if(s.some(function(v){return !SEAT_RE.test(v)})){e.className="e";e.textContent="Seats must look like S1, 1A, 3B.";return}
+  var what=r?("booking "+r):("seats "+s.join(", "));
+  if(!confirm("Cancel "+what+" and re-open the seats?"))return;
+  var p={};if(r)p.ref=r;if(s.length)p.seats=s;
+  doCancel(p,this,"Cancel and re-open seats")};
+
+async function loadList(){
+  var box=$("list"),key=$("k").value;
+  if(!key){box.innerHTML="";var p=document.createElement("p");p.textContent="Enter your passcode and tap Refresh.";box.appendChild(p);return}
+  try{
+    var res=await api({key:key,action:"list"});
+    box.textContent="";
+    if(!res.ok){var p1=document.createElement("p");p1.textContent=res.error||"Could not load.";box.appendChild(p1);return}
+    var by={};Object.keys(res.bookings).forEach(function(s){var r=res.bookings[s]||"(no ref)";(by[r]=by[r]||[]).push(s)});
+    var refs=Object.keys(by);
+    if(!refs.length){var p2=document.createElement("p");p2.textContent="No seats booked yet.";box.appendChild(p2);return}
+    refs.forEach(function(r){
+      var d=document.createElement("div");d.className="item";
+      var sp=document.createElement("span");sp.textContent=by[r].join(", ");
+      var sm=document.createElement("small");sm.textContent="Ref "+r;sp.appendChild(sm);
+      var bt=document.createElement("button");bt.className="red sm";bt.type="button";bt.textContent="Cancel";
+      bt.onclick=function(){
+        if(!confirm("Cancel booking "+r+" (seats "+by[r].join(", ")+") and re-open them?"))return;
+        var p=r==="(no ref)"?{seats:by[r]}:{ref:r};doCancel(p,bt,"Cancel")};
+      d.appendChild(sp);d.appendChild(bt);box.appendChild(d)})
+  }catch(x){box.textContent="";var p3=document.createElement("p");p3.textContent=netErr(x);box.appendChild(p3)}}
+$("refresh").onclick=loadList;
+</script></body></html>
